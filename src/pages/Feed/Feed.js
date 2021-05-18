@@ -8,6 +8,9 @@ import Paginator from "../../components/Paginator/Paginator";
 import Loader from "../../components/Loader/Loader";
 import ErrorHandler from "../../components/ErrorHandler/ErrorHandler";
 import "./Feed.css";
+import * as authService from "../../services/auth";
+import * as feedService from "../../services/feed";
+import { host } from "../../services/constants";
 
 class Feed extends Component {
   state = {
@@ -22,24 +25,15 @@ class Feed extends Component {
   };
 
   componentDidMount() {
-    fetch("http://localhost:5050/auth/status", {
-      headers: {
-        Authorization: `Bearer ${this.props.token}`,
-      },
-    })
-      .then((res) => {
-        if (res.status !== 200) {
-          throw new Error("Failed to fetch user status.");
-        }
-        return res.json();
-      })
+    authService
+      .getStatus(this.props.token)
       .then((resData) => {
         this.setState({ status: resData.status });
       })
       .catch(this.catchError);
 
     this.loadPosts();
-    const socket = socketClient("http://localhost:5050");
+    const socket = socketClient(host);
     socket.on("posts", (data) => {
       if (data.action === "create") {
         this.addPost(data.post);
@@ -95,17 +89,8 @@ class Feed extends Component {
       page--;
       this.setState({ postPage: page });
     }
-    fetch("http://localhost:5050/feed/posts?page=" + page, {
-      headers: {
-        Authorization: `Bearer ${this.props.token}`,
-      },
-    })
-      .then((res) => {
-        if (res.status !== 200) {
-          throw new Error("Failed to fetch posts.");
-        }
-        return res.json();
-      })
+    feedService
+      .getFeeds(page, this.props.token)
       .then((resData) => {
         console.log(resData);
         this.setState({
@@ -124,20 +109,8 @@ class Feed extends Component {
 
   statusUpdateHandler = (event) => {
     event.preventDefault();
-    fetch("http://localhost:5050/auth/status", {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${this.props.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ status: this.state.status }),
-    })
-      .then((res) => {
-        if (res.status !== 200 && res.status !== 201) {
-          throw new Error("Can't update status!");
-        }
-        return res.json();
-      })
+    authService
+      .updateStatus(this.props.token, this.state.status)
       .then((resData) => {
         console.log(resData);
       })
@@ -167,40 +140,13 @@ class Feed extends Component {
     this.setState({
       editLoading: true,
     });
-
-    const formData = new FormData();
-    formData.append("title", postData.title);
-    formData.append("content", postData.content);
-    formData.append("image", postData.image);
-
-    let url = "http://localhost:5050/feed/posts";
-    let method = "POST";
-    if (this.state.editPost) {
-      url = "http://localhost:5050/feed/posts/" + this.state.editPost._id;
-      method = "PUT";
-    }
-
-    fetch(url, {
-      method,
-      body: formData,
-      headers: {
-        Authorization: `Bearer ${this.props.token}`,
-      },
-    })
-      .then((res) => {
-        if (res.status !== 200 && res.status !== 201) {
-          throw new Error("Creating or editing a post failed!");
-        }
-        return res.json();
+    feedService
+      .saveFeed({
+        postData,
+        token: this.props.token,
+        id: this.state.editPost ? this.state.editPost._id : null,
       })
       .then((resData) => {
-        const post = {
-          _id: resData.post._id,
-          title: resData.post.title,
-          content: resData.post.content,
-          creator: resData.post.creator,
-          createdAt: resData.post.createdAt,
-        };
         this.setState((prevState) => {
           return {
             isEditing: false,
@@ -226,18 +172,8 @@ class Feed extends Component {
 
   deletePostHandler = (postId) => {
     this.setState({ postsLoading: true });
-    fetch("http://localhost:5050/feed/posts/" + postId, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${this.props.token}`,
-      },
-    })
-      .then((res) => {
-        if (res.status !== 200 && res.status !== 201) {
-          throw new Error("Deleting a post failed!");
-        }
-        return res.json();
-      })
+    feedService
+      .deleteFeed(postId, this.props.token)
       .then((resData) => {
         console.log(resData);
         // this.setState((prevState) => {
